@@ -6,13 +6,14 @@ import math
 import pandas as pd
 import tensorflow as tf
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Dropout, Embedding, LSTM
+from tensorflow.keras.layers import Dense, Dropout, Embedding, LSTM, GlobalAveragePooling1D
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.preprocessing.sequence import pad_sequences
 
 from src.decorators import handle_exception
 from src.logger import logging
 from src.utils import load_yaml, ensure_parent_dir
+from src.models.TransformerBlock import *
 
 
 class ModelTrainer:
@@ -62,6 +63,40 @@ class ModelTrainer:
             metrics=["accuracy"],
         )
         return model
+    
+    def build_transformer(self, total_words: int, model_path: str) -> tf.keras.Model:
+        # if model exist and flag tells to continue traning continue traning
+        resume = self.config['model'].get('resume_training', False)
+        if resume and os.path.exists(model_path) :
+            logging.info('Resuming the model traning')
+            model = tf.keras.models.load_model(model_path)
+        else:
+            logging.info('Building fresh model.')
+            max_len = self.model_cfg["max_len"]
+            model = Sequential([
+
+                TokenAndPositionEmbedding(
+                    max_len - 1,
+                    total_words,
+                    self.model_cfg["embedding_dim"]
+                ),
+
+                TransformerBlock(
+                    embed_dim=self.model_cfg["embedding_dim"],
+                    num_heads=4,
+                    ff_dim=self.model_cfg["transformer_ff"]
+                ),
+                
+                GlobalAveragePooling1D(),
+                Dropout(self.model_cfg["dropout_rate"]),
+                Dense(total_words, activation="softmax")
+            ])
+        model.compile(
+            loss="sparse_categorical_crossentropy",
+            optimizer='adam',
+            metrics=["accuracy"],
+        )
+        return model
 
     @handle_exception
     def train(self, train_seq: List[List[int]], val_seq: List[List[int]], total_words: int) -> Dict:
@@ -73,7 +108,7 @@ class ModelTrainer:
         history_path = base_path + '/' + self.config["artifacts"]["history_file_name"]
         ensure_parent_dir(history_path)
 
-        model = self.build_model(total_words=total_words, model_path=model_path)
+        model = self.build_transformer(total_words=total_words, model_path=model_path)
         max_len = self.model_cfg["max_len"]
         batch_size = self.model_cfg["batch_size"]
 

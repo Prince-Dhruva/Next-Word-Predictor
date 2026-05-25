@@ -22,6 +22,10 @@ class TrainPipeline:
         raw_text_path = self.config["data"]["raw_text_path"]
         with open(raw_text_path, "r", encoding="utf-8") as file:
             text = file.read()
+        
+        # For sample training
+        text = text[:len(text)//20]
+        
 
         sentences = data_transformation.preprocess_text(
             text=text,
